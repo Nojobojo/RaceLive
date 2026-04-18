@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
-import websockets
-from aiohttp import web
+from aiohttp import web, ClientSession, WSMsgType
 
 LIVE_MEETING_URL = "http://server.natsoft.com.au:8080/LiveMeeting/20260419.CPR"
 LOG_DIR = pathlib.Path("natsoft_logs")
@@ -486,45 +485,53 @@ async def run_collector(meeting_url: str) -> None:
     print(f"Connecting to {ws_url}")
     print(f"Logging to {log_path}")
 
-    async with websockets.connect(
-        ws_url,
-        ping_interval=None,
-        ping_timeout=None,
-        max_size=None,
-    ) as websocket:
-        print("Connected.\n")
+    async with ClientSession() as session:
+        async with session.ws_connect(
+            ws_url,
+            heartbeat=30,
+            autoclose=True,
+            autoping=True,
+        ) as websocket:
+            print("Connected.\n")
 
-        with log_path.open("a", encoding="utf-8") as log_file:
-            while True:
-                message = await websocket.recv()
+            with log_path.open("a", encoding="utf-8") as log_file:
+                async for message in websocket:
+                    if message.type == WSMsgType.TEXT:
+                        raw_text = message.data
+                    elif message.type == WSMsgType.BINARY:
+                        raw_text = message.data.decode("utf-8", errors="replace")
+                    elif message.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.ERROR):
+                        raise RuntimeError("WebSocket connection closed")
+                    else:
+                        continue
 
-                if isinstance(message, bytes):
-                    raw_text = message.decode("utf-8", errors="replace")
-                else:
-                    raw_text = message
+                    decoded = decode_natsoft_message(raw_text)
 
-                decoded = decode_natsoft_message(raw_text)
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    log_file.write(f"\n[{timestamp}]\n{decoded}\n")
+                    log_file.flush()
 
-                timestamp = datetime.now(timezone.utc).isoformat()
-                log_file.write(f"\n[{timestamp}]\n{decoded}\n")
-                log_file.flush()
+                    if not decoded.startswith("<"):
+                        continue
 
-                if not decoded.startswith("<"):
-                    continue
+                    try:
+                        state.update_from_xml(decoded)
+                    except ET.ParseError:
+                        continue
 
-                try:
-                    state.update_from_xml(decoded)
-                except ET.ParseError:
-                    continue
+                    write_state_file(state)
 
-                write_state_file(state)
-
-                if decoded.startswith("<L") or decoded.startswith("<New") or decoded.startswith("<S") or decoded.startswith("<C"):
-                    rendered = state.render_leaderboard()
-                    if rendered != last_render:
-                        print("\\033[2J\\033[H", end="")
-                        print(rendered)
-                        last_render = rendered
+                    if (
+                        decoded.startswith("<L")
+                        or decoded.startswith("<New")
+                        or decoded.startswith("<S")
+                        or decoded.startswith("<C")
+                    ):
+                        rendered = state.render_leaderboard()
+                        if rendered != last_render:
+                            print("\033[2J\033[H", end="")
+                            print(rendered)
+                            last_render = rendered
 
 
 async def collector_loop() -> None:
