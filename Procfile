@@ -1,1 +1,1 @@
-web: python3 natsoft_phase3.py
+web: python natsoft_phase3.py
