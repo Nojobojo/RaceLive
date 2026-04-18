@@ -130,7 +130,7 @@ HTML_PAGE = """
     }
 
     loadLive();
-    setInterval(loadLive, 1000);
+    setInterval(loadLive, 250);
   </script>
 </body>
 </html>
