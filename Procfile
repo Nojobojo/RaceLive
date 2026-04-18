@@ -1,1 +1,1 @@
-web: python natsoft_phase3.py
+web: /app/.venv/bin/python natsoft_phase3.py
