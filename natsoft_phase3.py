@@ -487,11 +487,16 @@ async def run_collector(meeting_url: str) -> None:
 
     async with ClientSession() as session:
         async with session.ws_connect(
-            ws_url,
-            heartbeat=30,
-            autoclose=True,
-            autoping=True,
-        ) as websocket:
+    ws_url,
+    heartbeat=30,
+    autoclose=True,
+    autoping=True,
+    timeout=60,
+    headers={
+        "User-Agent": "Mozilla/5.0",
+        "Origin": "http://server.natsoft.com.au:8080",
+    },
+) as websocket:
             print("Connected.\n")
 
             with log_path.open("a", encoding="utf-8") as log_file:
